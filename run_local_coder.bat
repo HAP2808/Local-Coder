@@ -1,3 +1,0 @@
-@echo off
-echo Starting LocalCoder...
-python local_coder.py 
