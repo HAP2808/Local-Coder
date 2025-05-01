@@ -9,7 +9,7 @@ import threading
 import uuid
 import win32gui
 import win32con
-from ai_processor import AIProcessor  # Import singleton instance
+from ai_processor import AIProcessor
 import pystray
 from PIL import Image, ImageDraw
 from win10toast import ToastNotifier
@@ -48,7 +48,7 @@ class LocalCoderApp:
         self.opacity = 0.8
         self.init_ui()
         self.setup_shortcuts()
-        self.root.update_idletasks()  # Ensure window is fully realized
+        self.root.update_idletasks()
         self.apply_screen_sharing_protection()
         self.create_tray_icon()
 
@@ -78,7 +78,7 @@ class LocalCoderApp:
         # Instruction label
         self.instruction_label = tk.Label(
             self.header_frame,
-            text="Ctrl+H to Capture • Ctrl+Enter to Process",
+            text="Ctrl+H to Capture • Ctrl+Enter to Process • Ctrl+S for Settings",
             font=("Segoe UI", 10),
             fg="#e0e0e0",
             bg="#1e1e1e",
@@ -123,6 +123,7 @@ class LocalCoderApp:
         keyboard.add_hotkey('ctrl+q', self.close_application, suppress=True)
         keyboard.add_hotkey('ctrl+enter', self.process_all_screenshots, suppress=True)
         keyboard.add_hotkey('ctrl+o', self.start_from_scratch, suppress=True)
+        keyboard.add_hotkey('ctrl+s', self.show_settings_dialog, suppress=True)
         keyboard.add_hotkey('ctrl+left', lambda: self.move_window(-self.move_step, 0), suppress=True)
         keyboard.add_hotkey('ctrl+right', lambda: self.move_window(self.move_step, 0), suppress=True)
         keyboard.add_hotkey('ctrl+up', lambda: self.move_window(0, -self.move_step), suppress=True)
@@ -144,7 +145,7 @@ class LocalCoderApp:
         self.settings_dialog.attributes('-topmost', True)
         self.settings_dialog.configure(bg='#2d2d2d')
 
-        # Apply screen capture protection after dialog is realized
+        # Apply screen capture protection
         self.settings_dialog.update_idletasks()
         hwnd = ctypes.windll.user32.GetParent(self.settings_dialog.winfo_id())
         if not hide_from_capture(hwnd):
@@ -169,6 +170,7 @@ class LocalCoderApp:
             ("Ctrl+H", "Take a screenshot"),
             ("Ctrl+Enter", "Process screenshots"),
             ("Ctrl+O", "Start from scratch"),
+            ("Ctrl+S", "Show settings"),
             ("Ctrl+F", "Toggle click-through"),
             ("Ctrl+Q", "Quit application"),
             ("Esc", "Hide/Show UI"),
@@ -305,7 +307,7 @@ class LocalCoderApp:
             print(f"Error showing loading sections: {e}")
 
     def show_professional_results(self, result):
-        """Display AI-generated results in a clean, collapsible layout."""
+        """Display AI-generated results in a professional, responsive layout."""
         try:
             if hasattr(self, 'result_frame') and self.result_frame.winfo_exists():
                 self.result_frame.destroy()
@@ -313,90 +315,151 @@ class LocalCoderApp:
             self.result_frame = tk.Frame(self.main_frame, bg='#1e1e1e')
             self.result_frame.pack(fill=tk.BOTH, expand=True)
 
-            window_width = self.root.winfo_screenwidth() // 2
-            window_height = min(self.root.winfo_screenheight() // 2, 600)
-            x = (self.root.winfo_screenwidth() - window_width) // 2
-            y = (self.root.winfo_screenheight() - window_height) // 2
+            # Use 95% of screen with margins
+            screen_width = self.root.winfo_screenwidth()
+            screen_height = self.root.winfo_screenheight()
+            window_width = int(screen_width * 0.95)
+            window_height = int(screen_height * 0.95)
+            x = (screen_width - window_width) // 2
+            y = (screen_height - window_height) // 2
             self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
-            canvas = tk.Canvas(self.result_frame, bg='#1e1e1e', highlightthickness=0)
-            scrollbar = tk.Scrollbar(self.result_frame, orient="vertical", command=canvas.yview)
-            scrollable_frame = tk.Frame(canvas, bg='#1e1e1e')
+            # Main container with grid layout
+            container = tk.Frame(self.result_frame, bg='#1e1e1e')
+            container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-            scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=window_width - 20)
-            canvas.configure(yscrollcommand=scrollbar.set)
-            canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            # Question section (full width)
+            question_frame = tk.Frame(container, bg='#2d2d2d', bd=1, relief=tk.SOLID)
+            question_frame.pack(fill=tk.X, pady=5)
+            self._create_collapsible_section(
+                question_frame,
+                "Question",
+                result.get("question", ""),
+                "📝",
+                is_code=False,
+                height=5
+            )
 
-            def _on_mousewheel(event):
-                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            # Middle row: Explanation and Code
+            middle_row = tk.Frame(container, bg='#1e1e1e')
+            middle_row.pack(fill=tk.BOTH, expand=True, pady=5)
 
-            if not result or not isinstance(result, dict):
-                self.show_error("Invalid response format received")
-                return
+            explanation_frame = tk.Frame(middle_row, bg='#2d2d2d', bd=1, relief=tk.SOLID)
+            explanation_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+            self._create_collapsible_section(
+                explanation_frame,
+                "Explanation",
+                result.get("explanation", ""),
+                "🔑",
+                is_code=False,
+                height=10
+            )
 
-            sections = [
-                ("Question", result.get("question", ""), "📝", False),
-                ("Approach", result.get("explanation", ""), "🔑", False),
-                ("Solution Code", result.get("solution", ""), "💻", True),
-                ("Example Usage", result.get("example", ""), "🔄", True),
-                ("Complexity Analysis", result.get("complexity", ""), "⏱️", False),
-                ("Notes", result.get("notes", ""), "📋", False),
-            ]
+            code_frame = tk.Frame(middle_row, bg='#2d2d2d', bd=1, relief=tk.SOLID)
+            code_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
+            self._create_collapsible_section(
+                code_frame,
+                "Code",
+                result.get("solution", ""),
+                "💻",
+                is_code=True,
+                height=10
+            )
 
-            for title, content, icon, is_code in sections:
-                if content:
-                    self._create_collapsible_section(scrollable_frame, title, content, icon, is_code)
+            # Bottom row: Complexity and Dry Run
+            bottom_row = tk.Frame(container, bg='#1e1e1e')
+            bottom_row.pack(fill=tk.BOTH, expand=True, pady=5)
 
+            complexity_frame = tk.Frame(bottom_row, bg='#2d2d2d', bd=1, relief=tk.SOLID)
+            complexity_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+            self._create_collapsible_section(
+                complexity_frame,
+                "Complexity",
+                result.get("complexity", ""),
+                "⏱️",
+                is_code=False,
+                height=5
+            )
+
+            dry_run_frame = tk.Frame(bottom_row, bg='#2d2d2d', bd=1, relief=tk.SOLID)
+            dry_run_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
+            self._create_collapsible_section(
+                dry_run_frame,
+                "Example Dry Run",
+                result.get("dry_run", ""),
+                "🔄",
+                is_code=True,
+                height=5
+            )
+
+            # Close button
             tk.Button(
-                scrollable_frame, text="Close", bg="#d70000", fg="white", font=("Segoe UI", 10),
+                container, text="Close", bg="#d70000", fg="white", font=("Segoe UI", 10),
                 command=self.hide_results, padx=10, pady=5
             ).pack(pady=10)
         except Exception as e:
             print(f"Error showing results: {e}")
             self.show_error(f"Error displaying results: {str(e)}")
 
-    def _create_collapsible_section(self, parent, title, content, icon, is_code=False):
-        """Create a collapsible section for results."""
-        frame = tk.Frame(parent, bg='#1e1e1e')
-        frame.pack(fill=tk.X, pady=5, padx=10)
+    def _create_collapsible_section(self, parent, title, content, icon, is_code=False, height=5):
+        """Create a collapsible section with scrollable content."""
+        frame = tk.Frame(parent, bg='#2d2d2d')
+        frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
+        # Header
         header = tk.Frame(frame, bg='#2d2d2d')
         header.pack(fill=tk.X)
         tk.Label(header, text=icon, font=("Segoe UI", 12), fg="#0078d7", bg="#2d2d2d").pack(side=tk.LEFT, padx=5)
         tk.Label(header, text=title, font=("Segoe UI", 12, "bold"), fg="#0078d7", bg="#2d2d2d").pack(side=tk.LEFT)
-        toggle_btn = tk.Label(header, text="▼", font=("Segoe UI", 10), fg="#e0e0e0", bg="#2d2d2d")
+        toggle_btn = tk.Label(header, text="▼", font=("Segoe UI", 10), fg="#e0e0e0", bg="#2d2d2d", cursor="hand2")
         toggle_btn.pack(side=tk.RIGHT, padx=5)
+        toggle_btn.bind("<Enter>", lambda e: toggle_btn.config(fg="#ffffff"))
+        toggle_btn.bind("<Leave>", lambda e: toggle_btn.config(fg="#e0e0e0"))
 
-        content_frame = tk.Frame(frame, bg='#1e1e1e')
+        # Content area with canvas and scrollbar
+        content_frame = tk.Frame(frame, bg='#2d2d2d')
+        canvas = tk.Canvas(content_frame, bg='#2d2d2d', highlightthickness=0)
+        scrollbar = tk.Scrollbar(content_frame, orient="vertical", command=canvas.yview)
+        inner_frame = tk.Frame(canvas, bg='#2d2d2d')
+        canvas.create_window((0, 0), window=inner_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        def _configure_canvas(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        inner_frame.bind("<Configure>", _configure_canvas)
+
         if is_code:
             text_widget = scrolledtext.ScrolledText(
-                content_frame, height=8, bg="#2d2d2d", fg="#e0e0e0", font=("Consolas", 10), wrap=tk.NONE
+                inner_frame, height=height, bg="#2d2d2d", fg="#e0e0e0", font=("Consolas", 10), wrap=tk.NONE
             )
             text_widget.insert(tk.END, content)
             text_widget.config(state=tk.DISABLED)
-            text_widget.pack(fill=tk.X, pady=5)
+            text_widget.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
             tk.Button(
-                content_frame, text="Copy", bg="#0078d7", fg="white", font=("Segoe UI", 9),
+                inner_frame, text="Copy", bg="#0078d7", fg="white", font=("Segoe UI", 9),
                 command=lambda: self.copy_specific_code(content), padx=5, pady=2
-            ).pack(side=tk.RIGHT)
+            ).pack(side=tk.RIGHT, padx=5, pady=2)
         else:
             tk.Label(
-                content_frame, text=content, font=("Segoe UI", 10), fg="#e0e0e0", bg="#1e1e1e",
-                wraplength=self.root.winfo_width() - 50, justify=tk.LEFT
-            ).pack(fill=tk.X, pady=5, padx=10)
+                inner_frame, text=content, font=("Segoe UI", 10), fg="#e0e0e0", bg="#2d2d2d",
+                wraplength=parent.winfo_screenwidth() // 3, justify=tk.LEFT
+            ).pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         def toggle():
             if content_frame.winfo_ismapped():
                 content_frame.pack_forget()
                 toggle_btn.config(text="▶")
             else:
-                content_frame.pack(fill=tk.X)
+                content_frame.pack(fill=tk.BOTH, expand=True)
                 toggle_btn.config(text="▼")
         toggle_btn.bind("<Button-1>", lambda e: toggle())
-        content_frame.pack(fill=tk.X)
+        content_frame.pack(fill=tk.BOTH, expand=True)
 
     def show_error(self, error_message):
         """Display an error message."""
@@ -568,6 +631,7 @@ class LocalCoderApp:
                 ("Ctrl+H", "Take a screenshot"),
                 ("Ctrl+Enter", "Process screenshots"),
                 ("Ctrl+O", "Start from scratch"),
+                ("Ctrl+S", "Show settings"),
                 ("Ctrl+F", "Toggle click-through"),
                 ("Ctrl+Q", "Quit"),
                 ("Esc", "Hide/Show UI"),

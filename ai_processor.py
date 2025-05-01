@@ -26,9 +26,8 @@ Format your response as a valid JSON object with these fields:
   "question": "Extracted problem statement",
   "explanation": "In-depth explanation of the approach",
   "solution": "Complete solution code (provide the full implementation)",
-  "example": "Example usage of the solution",
-  "complexity": "Time and space complexity analysis",
-  "notes": "Additional notes or edge cases to consider"
+  "dry_run": "Step-by-step dry run or example execution of the solution",
+  "complexity": "Time and space complexity analysis"
 }
 Ensure all code is fully executable and handles all edge cases mentioned in the problem."""
 
@@ -52,7 +51,7 @@ Ensure all code is fully executable and handles all edge cases mentioned in the 
                 try:
                     with open(config_path, "r") as f:
                         config = json.load(f)
-                        self.api_key = config.get("GROQ_API_KEY2")
+                        self.api_key = config.get("groq_api_key")
                 except Exception as e:
                     logger.error(f"Failed to load config: {e}")
         self.client = Groq(api_key=self.api_key) if self.api_key else None
@@ -66,7 +65,7 @@ Ensure all code is fully executable and handles all edge cases mentioned in the 
             config_dir = os.path.join(os.path.expanduser("~"), ".localcoder")
             os.makedirs(config_dir, exist_ok=True)
             config_path = os.path.join(config_dir, "config.json")
-            config = {"GROQ_API_KEY2": api_key}
+            config = {"groq_api_key": api_key}
             with open(config_path, "w") as f:
                 json.dump(config, f)
             return True
@@ -105,9 +104,8 @@ Ensure all code is fully executable and handles all edge cases mentioned in the 
             "question": "",
             "explanation": "Error processing screenshots",
             "solution": "# No solution generated",
-            "example": "",
-            "complexity": "",
-            "notes": "An error occurred during processing."
+            "dry_run": "",
+            "complexity": ""
         }
 
         if not self.check_api_key():
@@ -162,9 +160,8 @@ Ensure all code is fully executable and handles all edge cases mentioned in the 
             "question": "",
             "explanation": "Could not process screenshots",
             "solution": "# No solution generated",
-            "example": "",
-            "complexity": "",
-            "notes": "Error processing screenshots"
+            "dry_run": "",
+            "complexity": ""
         }
 
         if not images:
@@ -191,12 +188,11 @@ Ensure all code is fully executable and handles all edge cases mentioned in the 
                     max_tokens=self.MAX_TOKENS,
                     response_format={"type": "json_object"}
                 )
-                # print(response)
                 logger.info(f"API response received in {time.time() - start_time:.2f} seconds")
 
                 try:
                     parsed = json.loads(response.choices[0].message.content)
-                    required_keys = ["question", "explanation", "solution", "example", "complexity", "notes"]
+                    required_keys = ["question", "explanation", "solution", "dry_run", "complexity"]
                     for key in required_keys:
                         parsed.setdefault(key, default_response[key])
                     return parsed
@@ -221,9 +217,8 @@ Ensure all code is fully executable and handles all edge cases mentioned in the 
                 "question": "",
                 "explanation": "No valid images found",
                 "solution": "# No solution available",
-                "example": "",
-                "complexity": "",
-                "notes": "Failed to process screenshots."
+                "dry_run": "",
+                "complexity": ""
             }
         except Exception as e:
             logger.error(f"Thread processing error: {e}")
@@ -231,9 +226,8 @@ Ensure all code is fully executable and handles all edge cases mentioned in the 
                 "question": "",
                 "explanation": f"Error: {str(e)}",
                 "solution": "# Error during processing",
-                "example": "",
-                "complexity": "",
-                "notes": f"Processing error: {str(e)}"
+                "dry_run": "",
+                "complexity": ""
             }
         if callback:
             callback(result)
