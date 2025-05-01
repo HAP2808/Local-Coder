@@ -46,6 +46,7 @@ class LocalCoderApp:
         self.screenshot_files = []
         self.screenshot_thumbnails = []
         self.opacity = 0.8
+        self.settings_dialog = None
         self.init_ui()
         self.setup_shortcuts()
         self.root.update_idletasks()
@@ -73,7 +74,7 @@ class LocalCoderApp:
 
         # Header frame
         self.header_frame = tk.Frame(self.main_frame, bg='#1e1e1e')
-        self.header_frame.pack(fill=tk.X, padx=5, pady=5)
+        self.header_frame.pack(fill=tk.X, padx=2, pady=2)
 
         # Instruction label
         self.instruction_label = tk.Label(
@@ -82,8 +83,8 @@ class LocalCoderApp:
             font=("Segoe UI", 10),
             fg="#e0e0e0",
             bg="#1e1e1e",
-            padx=5,
-            pady=5
+            padx=2,
+            pady=2
         )
         self.instruction_label.pack(side=tk.LEFT)
 
@@ -95,8 +96,8 @@ class LocalCoderApp:
             bg="#2d2d2d",
             fg="#0078d7",
             relief=tk.FLAT,
-            command=self.show_settings_dialog,
-            padx=5,
+            command=self.toggle_settings_dialog,
+            padx=2,
             pady=2
         )
         self.settings_button.pack(side=tk.RIGHT)
@@ -105,9 +106,9 @@ class LocalCoderApp:
 
         # Thumbnails frame
         self.thumbnails_frame = tk.Frame(self.main_frame, bg='#1e1e1e')
-        self.thumbnails_frame.pack(fill=tk.X, padx=10, pady=5)
+        self.thumbnails_frame.pack(fill=tk.X, padx=2, pady=2)
         self.thumbnails_container = tk.Frame(self.thumbnails_frame, bg='#1e1e1e')
-        self.thumbnails_container.pack(fill=tk.X, pady=3)
+        self.thumbnails_container.pack(fill=tk.X, pady=2)
 
         # Make window draggable
         for widget in (self.header_frame, self.instruction_label):
@@ -123,7 +124,7 @@ class LocalCoderApp:
         keyboard.add_hotkey('ctrl+q', self.close_application, suppress=True)
         keyboard.add_hotkey('ctrl+enter', self.process_all_screenshots, suppress=True)
         keyboard.add_hotkey('ctrl+o', self.start_from_scratch, suppress=True)
-        keyboard.add_hotkey('ctrl+s', self.show_settings_dialog, suppress=True)
+        keyboard.add_hotkey('ctrl+s', self.toggle_settings_dialog, suppress=True)
         keyboard.add_hotkey('ctrl+left', lambda: self.move_window(-self.move_step, 0), suppress=True)
         keyboard.add_hotkey('ctrl+right', lambda: self.move_window(self.move_step, 0), suppress=True)
         keyboard.add_hotkey('ctrl+up', lambda: self.move_window(0, -self.move_step), suppress=True)
@@ -135,11 +136,16 @@ class LocalCoderApp:
         if not hide_from_capture(hwnd):
             self.show_notification("Warning: Could not hide UI from screen capture.")
 
-    def show_settings_dialog(self):
-        """Show a modal dialog with keyboard shortcuts."""
-        if hasattr(self, 'settings_dialog') and self.settings_dialog.winfo_exists():
+    def toggle_settings_dialog(self):
+        """Toggle the settings dialog (open if closed, close if open)."""
+        if self.settings_dialog and self.settings_dialog.winfo_exists():
             self.settings_dialog.destroy()
+            self.settings_dialog = None
+        else:
+            self.show_settings_dialog()
 
+    def show_settings_dialog(self):
+        """Show a modal dialog with keyboard shortcuts and opacity slider."""
         self.settings_dialog = tk.Toplevel(self.root)
         self.settings_dialog.overrideredirect(True)
         self.settings_dialog.attributes('-topmost', True)
@@ -153,7 +159,7 @@ class LocalCoderApp:
 
         # Center dialog
         dialog_width = 400
-        dialog_height = 300
+        dialog_height = 350  # Increased to accommodate slider
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         x = (screen_width - dialog_width) // 2
@@ -161,16 +167,35 @@ class LocalCoderApp:
         self.settings_dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
 
         # Dialog content
-        frame = tk.Frame(self.settings_dialog, bg='#2d2d2d', padx=10, pady=10)
+        frame = tk.Frame(self.settings_dialog, bg='#2d2d2d', padx=2, pady=2)
         frame.pack(fill=tk.BOTH, expand=True)
 
-        tk.Label(frame, text="Keyboard Shortcuts", font=("Segoe UI", 12, "bold"), fg="#e0e0e0", bg="#2d2d2d").pack(pady=5)
+        tk.Label(frame, text="Settings", font=("Segoe UI", 12, "bold"), fg="#e0e0e0", bg="#2d2d2d").pack(pady=2)
+
+        # Opacity slider
+        opacity_frame = tk.Frame(frame, bg="#2d2d2d")
+        opacity_frame.pack(fill=tk.X, pady=5)
+        tk.Label(opacity_frame, text="Opacity:", font=("Segoe UI", 9, "bold"), fg="#0078d7", bg="#2d2d2d", width=12, anchor="w").pack(side=tk.LEFT, padx=2)
+        self.opacity_label = tk.Label(opacity_frame, text=f"{self.opacity:.1f}", font=("Segoe UI", 9), fg="#e0e0e0", bg="#2d2d2d", width=4)
+        self.opacity_label.pack(side=tk.LEFT, padx=2)
+        opacity_slider = ttk.Scale(
+            opacity_frame,
+            from_=0.1,
+            to=1.0,
+            orient=tk.HORIZONTAL,
+            command=self.update_opacity
+        )
+        opacity_slider.set(self.opacity)
+        opacity_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+
+        # Shortcuts section
+        tk.Label(frame, text="Keyboard Shortcuts", font=("Segoe UI", 12, "bold"), fg="#e0e0e0", bg="#2d2d2d").pack(pady=2)
 
         shortcuts = [
             ("Ctrl+H", "Take a screenshot"),
             ("Ctrl+Enter", "Process screenshots"),
             ("Ctrl+O", "Start from scratch"),
-            ("Ctrl+S", "Show settings"),
+            ("Ctrl+S", "Toggle settings"),
             ("Ctrl+F", "Toggle click-through"),
             ("Ctrl+Q", "Quit application"),
             ("Esc", "Hide/Show UI"),
@@ -180,10 +205,17 @@ class LocalCoderApp:
         for key, desc in shortcuts:
             row = tk.Frame(frame, bg="#2d2d2d")
             row.pack(fill=tk.X, pady=2)
-            tk.Label(row, text=key, font=("Segoe UI", 9, "bold"), fg="#0078d7", bg="#2d2d2d", width=12, anchor="w").pack(side=tk.LEFT, padx=5)
+            tk.Label(row, text=key, font=("Segoe UI", 9, "bold"), fg="#0078d7", bg="#2d2d2d", width=12, anchor="w").pack(side=tk.LEFT, padx=2)
             tk.Label(row, text=desc, font=("Segoe UI", 9), fg="#e0e0e0", bg="#2d2d2d", anchor="w").pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        tk.Button(frame, text="Close", bg="#0078d7", fg="white", font=("Segoe UI", 10), command=self.settings_dialog.destroy).pack(pady=10)
+    def update_opacity(self, value):
+        """Update UI opacity based on slider value."""
+        try:
+            self.opacity = float(value)
+            self.root.attributes('-alpha', self.opacity)
+            self.opacity_label.config(text=f"{self.opacity:.1f}")
+        except Exception as e:
+            print(f"Error updating opacity: {e}")
 
     def take_screenshot(self):
         """Capture a screenshot and add it to the UI."""
@@ -209,8 +241,8 @@ class LocalCoderApp:
         """Add a thumbnail for a screenshot."""
         try:
             img = ImageTk.PhotoImage(file=file_path)
-            thumb_frame = tk.Frame(self.thumbnails_container, bg="#2d2d2d", padx=3, pady=3)
-            thumb_frame.pack(side=tk.LEFT, padx=3, pady=3)
+            thumb_frame = tk.Frame(self.thumbnails_container, bg="#2d2d2d", padx=2, pady=2)
+            thumb_frame.pack(side=tk.LEFT, padx=2, pady=2)
 
             img_width, img_height = img.width(), img.height()
             max_size = 80
@@ -293,7 +325,7 @@ class LocalCoderApp:
 
             loading_frame = tk.Frame(self.result_frame, bg='#1e1e1e')
             loading_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
-            tk.Label(loading_frame, text="⏳ Processing...", font=("Segoe UI", 14), fg="#0078d7", bg="#1e1e1e").pack(pady=10)
+            tk.Label(loading_frame, text="⏳ Processing...", font=("Segoe UI", 14), fg="#0078d7", bg="#1e1e1e").pack(pady=2)
 
             def animate():
                 if not loading_frame.winfo_exists():
@@ -324,132 +356,166 @@ class LocalCoderApp:
             y = (screen_height - window_height) // 2
             self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
-            # Main container with grid layout
-            container = tk.Frame(self.result_frame, bg='#1e1e1e')
-            container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            # Calculate section heights
+            question_height = int(window_height * 0.10)  # 10%
+            column_height = int(window_height * 0.90)    # 90% for columns
+            explanation_height = int(column_height * 0.30)  # 30%
+            complexity_height = int(column_height * 0.25)   # 25%
+            dry_run_height = int(column_height * 0.35)      # 35%
+            code_height = int(column_height * 0.90)         # 90%
 
-            # Question section (full width)
+            # Main container
+            container = tk.Frame(self.result_frame, bg='#1e1e1e')
+            container.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+
+            # Question section (full width, 10% height)
             question_frame = tk.Frame(container, bg='#2d2d2d', bd=1, relief=tk.SOLID)
-            question_frame.pack(fill=tk.X, pady=5)
+            question_frame.pack(fill=tk.X, pady=2)
             self._create_collapsible_section(
                 question_frame,
                 "Question",
                 result.get("question", ""),
                 "📝",
                 is_code=False,
-                height=5
+                pixel_height=question_height,
+                wraplength=window_width - 20
             )
 
-            # Middle row: Explanation and Code
-            middle_row = tk.Frame(container, bg='#1e1e1e')
-            middle_row.pack(fill=tk.BOTH, expand=True, pady=5)
+            # Two-column layout
+            columns_frame = tk.Frame(container, bg='#1e1e1e')
+            columns_frame.pack(fill=tk.BOTH, expand=True, pady=2)
 
-            explanation_frame = tk.Frame(middle_row, bg='#2d2d2d', bd=1, relief=tk.SOLID)
-            explanation_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+            # Left column: Explanation, Complexity, Example Dry Run (60% width)
+            left_column = tk.Frame(columns_frame, bg='#2d2d2d', width=int(window_width * 0.6))
+            left_column.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 2))
+            left_column.pack_propagate(False)
+
+            # Explanation (30% of column)
+            explanation_frame = tk.Frame(left_column, bg='#2d2d2d', bd=1, relief=tk.SOLID)
+            explanation_frame.pack(fill=tk.X, pady=(0, 2))
             self._create_collapsible_section(
                 explanation_frame,
                 "Explanation",
                 result.get("explanation", ""),
                 "🔑",
                 is_code=False,
-                height=10
+                pixel_height=explanation_height,
+                wraplength=int(window_width * 0.6) - 20
             )
 
-            code_frame = tk.Frame(middle_row, bg='#2d2d2d', bd=1, relief=tk.SOLID)
-            code_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
-            self._create_collapsible_section(
-                code_frame,
-                "Code",
-                result.get("solution", ""),
-                "💻",
-                is_code=True,
-                height=10
-            )
-
-            # Bottom row: Complexity and Dry Run
-            bottom_row = tk.Frame(container, bg='#1e1e1e')
-            bottom_row.pack(fill=tk.BOTH, expand=True, pady=5)
-
-            complexity_frame = tk.Frame(bottom_row, bg='#2d2d2d', bd=1, relief=tk.SOLID)
-            complexity_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+            # Complexity (25% of column)
+            complexity_frame = tk.Frame(left_column, bg='#2d2d2d', bd=1, relief=tk.SOLID)
+            complexity_frame.pack(fill=tk.X, pady=(0, 2))
             self._create_collapsible_section(
                 complexity_frame,
                 "Complexity",
                 result.get("complexity", ""),
                 "⏱️",
                 is_code=False,
-                height=5
+                pixel_height=complexity_height,
+                wraplength=int(window_width * 0.6) - 20
             )
 
-            dry_run_frame = tk.Frame(bottom_row, bg='#2d2d2d', bd=1, relief=tk.SOLID)
-            dry_run_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
+            # Example Dry Run (35% of column)
+            dry_run_frame = tk.Frame(left_column, bg='#2d2d2d', bd=1, relief=tk.SOLID)
+            dry_run_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 2))
             self._create_collapsible_section(
                 dry_run_frame,
                 "Example Dry Run",
                 result.get("dry_run", ""),
                 "🔄",
                 is_code=True,
-                height=5
+                pixel_height=dry_run_height
             )
 
-            # Close button
-            tk.Button(
-                container, text="Close", bg="#d70000", fg="white", font=("Segoe UI", 10),
-                command=self.hide_results, padx=10, pady=5
-            ).pack(pady=10)
+            # Right column: Code (40% width, 90% height)
+            code_frame = tk.Frame(columns_frame, bg='#2d2d2d', bd=1, relief=tk.SOLID)
+            code_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(2, 0))
+            self._create_collapsible_section(
+                code_frame,
+                "Code",
+                result.get("solution", ""),
+                "💻",
+                is_code=True,
+                pixel_height=code_height
+            )
+
         except Exception as e:
             print(f"Error showing results: {e}")
             self.show_error(f"Error displaying results: {str(e)}")
 
-    def _create_collapsible_section(self, parent, title, content, icon, is_code=False, height=5):
-        """Create a collapsible section with scrollable content."""
+    def _create_collapsible_section(self, parent, title, content, icon, is_code=False, pixel_height=100, wraplength=None):
+        """Create a collapsible section with fixed pixel height and styled scrollbar."""
         frame = tk.Frame(parent, bg='#2d2d2d')
-        frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
 
         # Header
         header = tk.Frame(frame, bg='#2d2d2d')
         header.pack(fill=tk.X)
-        tk.Label(header, text=icon, font=("Segoe UI", 12), fg="#0078d7", bg="#2d2d2d").pack(side=tk.LEFT, padx=5)
+        tk.Label(header, text=icon, font=("Segoe UI", 12), fg="#0078d7", bg="#2d2d2d").pack(side=tk.LEFT, padx=2)
         tk.Label(header, text=title, font=("Segoe UI", 12, "bold"), fg="#0078d7", bg="#2d2d2d").pack(side=tk.LEFT)
         toggle_btn = tk.Label(header, text="▼", font=("Segoe UI", 10), fg="#e0e0e0", bg="#2d2d2d", cursor="hand2")
-        toggle_btn.pack(side=tk.RIGHT, padx=5)
+        toggle_btn.pack(side=tk.RIGHT, padx=2)
         toggle_btn.bind("<Enter>", lambda e: toggle_btn.config(fg="#ffffff"))
         toggle_btn.bind("<Leave>", lambda e: toggle_btn.config(fg="#e0e0e0"))
 
-        # Content area with canvas and scrollbar
+        # Content area
         content_frame = tk.Frame(frame, bg='#2d2d2d')
-        canvas = tk.Canvas(content_frame, bg='#2d2d2d', highlightthickness=0)
+        canvas = tk.Canvas(content_frame, bg='#2d2d2d', highlightthickness=0, height=pixel_height)
         scrollbar = tk.Scrollbar(content_frame, orient="vertical", command=canvas.yview)
         inner_frame = tk.Frame(canvas, bg='#2d2d2d')
         canvas.create_window((0, 0), window=inner_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # Style scrollbar
+        scrollbar.config(
+            bg="#2d2d2d",
+            troughcolor="#3c3c3c",
+            activebackground="#0078d7",
+            highlightbackground="#0078d7",
+            width=8
+        )
+
+        # Mouse wheel binding
         def _on_mousewheel(event):
             canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
+        # Check if scrollbar is needed
         def _configure_canvas(event):
+            canvas.update_idletasks()
+            content_height = inner_frame.winfo_reqheight()
+            canvas_height = canvas.winfo_height()
             canvas.configure(scrollregion=canvas.bbox("all"))
+            if content_height <= canvas_height:
+                scrollbar.pack_forget()
+            else:
+                scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         inner_frame.bind("<Configure>", _configure_canvas)
 
         if is_code:
             text_widget = scrolledtext.ScrolledText(
-                inner_frame, height=height, bg="#2d2d2d", fg="#e0e0e0", font=("Consolas", 10), wrap=tk.NONE
+                inner_frame, height=pixel_height//15, bg="#1a1a1a", fg="#ffffff", font=("Consolas", 10),
+                wrap=tk.NONE, insertbackground="white", borderwidth=0
             )
             text_widget.insert(tk.END, content)
             text_widget.config(state=tk.DISABLED)
-            text_widget.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-            tk.Button(
+            text_widget.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+            copy_btn = tk.Button(
                 inner_frame, text="Copy", bg="#0078d7", fg="white", font=("Segoe UI", 9),
-                command=lambda: self.copy_specific_code(content), padx=5, pady=2
-            ).pack(side=tk.RIGHT, padx=5, pady=2)
+                command=lambda: self.copy_specific_code(content), padx=2, pady=2
+            )
+            copy_btn.pack(side=tk.RIGHT, padx=2, pady=2)
+            copy_btn.bind("<Enter>", lambda e: copy_btn.config(bg="#005ba1"))
+            copy_btn.bind("<Leave>", lambda e: copy_btn.config(bg="#0078d7"))
         else:
             tk.Label(
                 inner_frame, text=content, font=("Segoe UI", 10), fg="#e0e0e0", bg="#2d2d2d",
-                wraplength=parent.winfo_screenwidth() // 3, justify=tk.LEFT
-            ).pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+                wraplength=wraplength or (parent.winfo_screenwidth() // 5), justify=tk.LEFT
+            ).pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        content_frame.pack(fill=tk.BOTH, expand=True)
 
         def toggle():
             if content_frame.winfo_ismapped():
@@ -459,7 +525,6 @@ class LocalCoderApp:
                 content_frame.pack(fill=tk.BOTH, expand=True)
                 toggle_btn.config(text="▼")
         toggle_btn.bind("<Button-1>", lambda e: toggle())
-        content_frame.pack(fill=tk.BOTH, expand=True)
 
     def show_error(self, error_message):
         """Display an error message."""
@@ -471,9 +536,9 @@ class LocalCoderApp:
             error_frame = tk.Frame(self.result_frame, bg='#1e1e1e')
             error_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
             tk.Label(error_frame, text="❌", font=("Segoe UI", 24), fg="#ff4d4d", bg="#1e1e1e").pack()
-            tk.Label(error_frame, text="Error", font=("Segoe UI", 16, "bold"), fg="#e0e0e0", bg="#1e1e1e").pack(pady=10)
-            tk.Label(error_frame, text=error_message, font=("Segoe UI", 12), fg="#e0e0e0", bg="#1e1e1e", wraplength=300).pack(pady=10)
-            tk.Button(error_frame, text="Back", bg="#0078d7", fg="white", font=("Segoe UI", 10), command=self.hide_results).pack(pady=10)
+            tk.Label(error_frame, text="Error", font=("Segoe UI", 16, "bold"), fg="#e0e0e0", bg="#1e1e1e").pack(pady=2)
+            tk.Label(error_frame, text=error_message, font=("Segoe UI", 12), fg="#e0e0e0", bg="#1e1e1e", wraplength=300).pack(pady=2)
+            tk.Button(error_frame, text="Back", bg="#0078d7", fg="white", font=("Segoe UI", 10), command=self.hide_results).pack(pady=2)
         except Exception as e:
             print(f"Error displaying error message: {e}")
 
@@ -483,7 +548,7 @@ class LocalCoderApp:
             if hasattr(self, 'result_frame') and self.result_frame.winfo_exists():
                 self.result_frame.destroy()
             self.root.unbind_all("<MouseWheel>")
-            self.thumbnails_frame.pack(fill=tk.X, padx=10, pady=5, after=self.header_frame)
+            self.thumbnails_frame.pack(fill=tk.X, padx=2, pady=2, after=self.header_frame)
             self._resize_window_to_fit_content()
             if self.click_through_enabled:
                 self.make_click_through()
@@ -501,7 +566,7 @@ class LocalCoderApp:
             self.screenshot_thumbnails = []
             if hasattr(self, 'result_frame') and self.result_frame.winfo_exists():
                 self.result_frame.destroy()
-            self.thumbnails_frame.pack(fill=tk.X, padx=10, pady=5, after=self.header_frame)
+            self.thumbnails_frame.pack(fill=tk.X, padx=2, pady=2, after=self.header_frame)
             self._resize_window_to_fit_content()
             self.show_temporary_message("Started a new question. Use Ctrl+H to capture.")
         except Exception as e:
@@ -582,8 +647,8 @@ class LocalCoderApp:
     def show_temporary_message(self, message, duration=3000):
         """Show a temporary message."""
         try:
-            msg_frame = tk.Frame(self.thumbnails_frame, bg="#0078d7", padx=10, pady=5)
-            msg_frame.pack(fill=tk.X, pady=5)
+            msg_frame = tk.Frame(self.thumbnails_frame, bg="#0078d7", padx=2, pady=2)
+            msg_frame.pack(fill=tk.X, pady=2)
             tk.Label(msg_frame, text=message, font=("Segoe UI", 10), fg="white", bg="#0078d7").pack()
             self.root.after(duration, lambda: self.fade_out_message(msg_frame))
         except Exception as e:
@@ -631,7 +696,7 @@ class LocalCoderApp:
                 ("Ctrl+H", "Take a screenshot"),
                 ("Ctrl+Enter", "Process screenshots"),
                 ("Ctrl+O", "Start from scratch"),
-                ("Ctrl+S", "Show settings"),
+                ("Ctrl+S", "Toggle settings"),
                 ("Ctrl+F", "Toggle click-through"),
                 ("Ctrl+Q", "Quit"),
                 ("Esc", "Hide/Show UI"),
