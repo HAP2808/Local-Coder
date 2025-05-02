@@ -25,7 +25,7 @@ LocalCoder is a Windows application designed to assist users during coding inter
 3. Install the required dependencies:
 
 ```
-pip install groq python-dotenv pillow keyboard pywin32 pystray win10toast requests
+pip install -r requirements.txt
 ```
 
 4. Set up the required environment variable for the Grok API key:
