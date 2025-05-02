@@ -16,12 +16,20 @@ from win10toast import ToastNotifier
 
 # Windows API constants
 WDA_EXCLUDEFROMCAPTURE = 0x00000011
+GWL_EXSTYLE = -20
+WS_EX_TOOLWINDOW = 0x00000080
 
 # Load Windows APIs
 user32 = ctypes.WinDLL('user32', use_last_error=True)
 _set_window_display_affinity = user32.SetWindowDisplayAffinity
 _set_window_display_affinity.argtypes = (ctypes.wintypes.HWND, ctypes.wintypes.UINT)
 _set_window_display_affinity.restype = ctypes.wintypes.BOOL
+_set_window_long = user32.SetWindowLongPtrW
+_set_window_long.argtypes = (ctypes.wintypes.HWND, ctypes.c_int, ctypes.wintypes.LONG)
+_set_window_long.restype = ctypes.wintypes.LONG
+_get_window_long = user32.GetWindowLongPtrW
+_get_window_long.argtypes = (ctypes.wintypes.HWND, ctypes.c_int)
+_get_window_long.restype = ctypes.wintypes.LONG
 
 def hide_from_capture(hwnd):
     """Hide window from screen capture using SetWindowDisplayAffinity."""
@@ -131,7 +139,7 @@ class LocalCoderApp:
         keyboard.add_hotkey('ctrl+down', lambda: self.move_window(0, self.move_step), suppress=True)
 
     def apply_screen_sharing_protection(self):
-        """Hide the main window and settings dialog from screen capture."""
+        """Hide the main window from screen capture."""
         hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
         if not hide_from_capture(hwnd):
             self.show_notification("Warning: Could not hide UI from screen capture.")
@@ -142,24 +150,37 @@ class LocalCoderApp:
             self.settings_dialog.destroy()
             self.settings_dialog = None
         else:
-            self.show_settings_dialog()
+            # Schedule dialog creation to avoid flicker
+            self.root.after(50, self.show_settings_dialog)
 
     def show_settings_dialog(self):
         """Show a modal dialog with keyboard shortcuts and opacity slider."""
+        # Create Toplevel and immediately hide it
         self.settings_dialog = tk.Toplevel(self.root)
+        self.settings_dialog.withdraw()  # Hide to prevent flicker
+        self.root.update_idletasks()  # Ensure main window is stable
+
+        # Configure window attributes
         self.settings_dialog.overrideredirect(True)
         self.settings_dialog.attributes('-topmost', True)
         self.settings_dialog.configure(bg='#2d2d2d')
 
+        # Make the dialog transient to the main window
+        self.settings_dialog.transient(self.root)
+
+        # Apply tool window style to hide from taskbar
+        hwnd = ctypes.windll.user32.GetParent(self.settings_dialog.winfo_id())
+        current_style = _get_window_long(hwnd, GWL_EXSTYLE)
+        _set_window_long(hwnd, GWL_EXSTYLE, current_style | WS_EX_TOOLWINDOW)
+
         # Apply screen capture protection
         self.settings_dialog.update_idletasks()
-        hwnd = ctypes.windll.user32.GetParent(self.settings_dialog.winfo_id())
         if not hide_from_capture(hwnd):
             print("Failed to hide settings dialog from screen capture")
 
         # Center dialog
         dialog_width = 400
-        dialog_height = 350  # Increased to accommodate slider
+        dialog_height = 350
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         x = (screen_width - dialog_width) // 2
@@ -207,6 +228,10 @@ class LocalCoderApp:
             row.pack(fill=tk.X, pady=2)
             tk.Label(row, text=key, font=("Segoe UI", 9, "bold"), fg="#0078d7", bg="#2d2d2d", width=12, anchor="w").pack(side=tk.LEFT, padx=2)
             tk.Label(row, text=desc, font=("Segoe UI", 9), fg="#e0e0e0", bg="#2d2d2d", anchor="w").pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # Show the dialog after full configuration
+        self.settings_dialog.update_idletasks()
+        self.settings_dialog.deiconify()
 
     def update_opacity(self, value):
         """Update UI opacity based on slider value."""
