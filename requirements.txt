@@ -2,4 +2,7 @@ pillow>=9.5.0
 keyboard>=0.13.5
 groq>=0.3.0
 python-dotenv
-pystray
+pystray>=0.19.0
+pywin32
+win10toast>=0.9
+requests>=2.28.0
