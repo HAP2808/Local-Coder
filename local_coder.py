@@ -581,7 +581,7 @@ class LocalCoderApp:
             print(f"Error hiding results: {e}")
 
     def start_from_scratch(self):
-        """Reset the UI for a new question."""
+        """Reset the UI for a new question without showing any message."""
         try:
             for file_path, thumb_frame in self.screenshot_thumbnails:
                 thumb_frame.destroy()
@@ -593,7 +593,6 @@ class LocalCoderApp:
                 self.result_frame.destroy()
             self.thumbnails_frame.pack(fill=tk.X, padx=2, pady=2, after=self.header_frame)
             self._resize_window_to_fit_content()
-            self.show_temporary_message("Started a new question. Use Ctrl+H to capture.")
         except Exception as e:
             print(f"Error in start_from_scratch: {e}")
 
