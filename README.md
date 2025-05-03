@@ -31,9 +31,9 @@ pip install -r requirements.txt
 4. Set up the required environment variable for the Grok API key:
    - Create a `.env` file in the project directory or set the variable manually:
      ```
-     GROQ_API_KEY2=your_grok_api_key_here
+     GROQ_API_KEY2=your_groq_api_key_here
      ```
-   - Obtain the API key from [Grok API](https://x.ai/api).
+   - Obtain the API key from [Groq API](https://console.groq.com/keys).
 
 ## Usage
 
@@ -95,3 +95,5 @@ python local_coder.py
 - The UI is designed to be excluded from screen capture during screen sharing, ensuring it remains invisible to interviewers.
 - Ensure the `GROQ_API_KEY2` environment variable is set correctly, or the AI features will not function.
 - Logs are saved to `local_coder.log` and `chatbot.log` for debugging purposes.
+
+WARNING - This is only for learning purpose. Collaborators of this project do not promote cheating or malpractise. 
