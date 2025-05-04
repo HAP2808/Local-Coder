@@ -1,7 +1,7 @@
 import os
+import json
 import logging
 from groq import Groq, APIError
-from dotenv import load_dotenv
 import requests
 
 # Configure logging
@@ -12,12 +12,10 @@ logging.basicConfig(
 )
 
 class ChatProcessor:
-    def __init__(self):
-        load_dotenv()
-        api_key = os.getenv("GROQ_API_KEY2")
+    def __init__(self, api_key):
         if not api_key:
-            logging.error("GROQ_API_KEY2 environment variable not set")
-            raise ValueError("GROQ_API_KEY2 environment variable not set")
+            logging.error("GROQ API key not provided")
+            raise ValueError("GROQ API key not provided")
         self.client = Groq(api_key=api_key)
         self.chat_history = []
 
@@ -36,7 +34,7 @@ class ChatProcessor:
             )
             messages = [{"role": "system", "content": system_prompt}] + self.chat_history
             response = self.client.chat.completions.create(
-                model="meta-llama/llama-4-maverick-17b-128e-instruct",
+                model=os.getenv("GROQ_MODEL", "meta-llama/llama-4-maverick-17b-128e-instruct"),
                 messages=messages,
                 temperature=0.7,
                 stream=False

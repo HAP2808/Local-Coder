@@ -1,89 +1,250 @@
 import os
+import json
+import base64
 import logging
-from groq import Groq, APIError
+import threading
+import time
+from typing import List, Dict, Any, Optional, Callable
 from dotenv import load_dotenv
-import requests
+from groq import Groq, APIError
 
 # Configure logging
 logging.basicConfig(
     filename='screenshot.log',
-    level=logging.ERROR,
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv()
 
 class ScreenshotProcessor:
-    def __init__(self):
-        load_dotenv()
-        api_key = os.getenv("GROQ_API_KEY2")
-        if not api_key:
-            logging.error("GROQ_API_KEY2 environment variable not set")
-            raise ValueError("GROQ_API_KEY2 environment variable not set")
-        self.client = Groq(api_key=api_key)
+    """Singleton class to process screenshots using Groq API for coding problem analysis."""
+    _instance = None
 
-    def process_screenshots(self, screenshot_files, callback=None):
-        """Process screenshots to generate structured output."""
+    SYSTEM_PROMPT = """You are an expert programming assistant analyzing coding problems from screenshots.
+Extract the problem statement and provide a comprehensive solution with explanation, code, and examples.
+Format your response as a valid JSON object with these fields:
+{
+  "question": "Extracted problem statement",
+  "explanation": "In-depth explanation of the approach",
+  "solution": "Complete solution code (provide the full implementation)",
+  "dry_run": "Step-by-step dry run or example execution of the solution",
+  "complexity": "Time and space complexity analysis"
+}
+Ensure all code is fully executable and handles all edge cases mentioned in the problem."""
+
+    USER_PROMPT = "Analyze these screenshots of a coding problem and provide a solution."
+    MODEL = "meta-llama/llama-4-maverick-17b-128e-instruct"
+    MAX_TOKENS = 4096
+    MAX_RETRIES = 3
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(ScreenshotProcessor, cls).__new__(cls)
+            cls._instance._initialize()
+        return cls._instance
+
+    def _initialize(self):
+        """Initialize the processor with configuration values."""
+        self.api_key = os.environ.get("GROQ_API_KEY")
+        if not self.api_key:
+            config_path = os.path.join(os.path.expanduser("~"), ".localcoder", "config.json")
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "r") as f:
+                        config = json.load(f)
+                        self.api_key = config.get("groq_api_key")
+                except Exception as e:
+                    logger.error(f"Failed to load config: {e}")
+        self.client = Groq(api_key=self.api_key) if self.api_key else None
+        self.model = self.MODEL
+
+    def set_api_key(self, api_key: str) -> bool:
+        """Set and save the API key."""
         try:
-            if not screenshot_files:
-                logging.error("No screenshot files provided")
-                return {"error": "No screenshots provided"}
-            
-            prompt = (
-                "You are an expert software engineer preparing a student for a technical interview. "
-                "Analyze the provided screenshots containing code or technical questions. "
-                "Generate a structured response with the following sections:\n"
-                "- **Question**: Summarize the question or problem statement.\n"
-                "- **Explanation**: Provide a detailed explanation of the solution or concept.\n"
-                "- **Complexity**: Analyze time and space complexity (if applicable).\n"
-                "- **Example Dry Run**: Step-by-step dry run of the solution (if applicable).\n"
-                "- **Code**: Provide the complete, correct code solution (if applicable).\n"
-                "Ensure the response is clear, concise, and tailored for a software engineering interview context."
-            )
-            messages = [
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": f"Analyze the screenshots: {', '.join(screenshot_files)}"}
-            ]
-            response = self.client.chat.completions.create(
-                model="meta-llama/llama-4-maverick-17b-128e-instruct",
-                messages=messages,
-                temperature=0.7,
-                stream=False
-            )
-            content = response.choices[0].message.content
-            sections = {
-                "question": "",
-                "explanation": "",
-                "complexity": "",
-                "dry_run": "",
-                "solution": ""
-            }
-            current_section = None
-            for line in content.split("\n"):
-                line = line.strip()
-                if line.startswith("**Question**:"):
-                    current_section = "question"
-                    sections[current_section] = line.replace("**Question**:", "").strip()
-                elif line.startswith("**Explanation**:"):
-                    current_section = "explanation"
-                    sections[current_section] = line.replace("**Explanation**:", "").strip()
-                elif line.startswith("**Complexity**:"):
-                    current_section = "complexity"
-                    sections[current_section] = line.replace("**Complexity**:", "").strip()
-                elif line.startswith("**Example Dry Run**:"):
-                    current_section = "dry_run"
-                    sections[current_section] = line.replace("**Example Dry Run**:", "").strip()
-                elif line.startswith("**Code**:"):
-                    current_section = "solution"
-                    sections[current_section] = line.replace("**Code**:", "").strip()
-                elif current_section and line:
-                    sections[current_section] += "\n" + line
-            return sections
-        
-        except APIError as e:
-            logging.error(f"Groq API error: {str(e)}")
-            return {"error": f"API error: {str(e)}. Please try again."}
-        except requests.ConnectionError:
-            logging.error("Network connection error")
-            return {"error": "Network error: Unable to connect to the AI server. Please check your internet connection."}
+            self.api_key = api_key
+            self.client = Groq(api_key=self.api_key)
+            config_dir = os.path.join(os.path.expanduser("~"), ".localcoder")
+            os.makedirs(config_dir, exist_ok=True)
+            config_path = os.path.join(config_dir, "config.json")
+            config = {"groq_api_key": api_key}
+            with open(config_path, "w") as f:
+                json.dump(config, f)
+            logger.info("API key set and saved successfully")
+            return True
         except Exception as e:
-            logging.error(f"Unexpected error in process_screenshots: {str(e)}")
-            return {"error": f"Unexpected error: {str(e)}. Please try again or contact support."}
+            logger.error(f"Failed to set API key: {e}")
+            return False
+
+    def check_api_key(self) -> bool:
+        """Validate the API key."""
+        if not self.api_key or not self.client:
+            logger.error("API key or client not initialized")
+            return False
+        try:
+            self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": "test"}],
+                max_tokens=1
+            )
+            logger.debug("API key validated successfully")
+            return True
+        except Exception as e:
+            logger.error(f"API key validation failed: {e}")
+            return False
+
+    def encode_image(self, image_path: str) -> Optional[str]:
+        """Encode an image to base64 format."""
+        try:
+            with open(image_path, "rb") as image_file:
+                encoded = base64.b64encode(image_file.read()).decode('utf-8')
+                logger.debug(f"Encoded image {image_path} to base64")
+                return encoded
+        except Exception as e:
+            logger.error(f"Failed to encode image {image_path}: {e}")
+            return None
+
+    def process_screenshots(self, screenshot_paths: List[str], callback: Optional[Callable] = None) -> Optional[Dict]:
+        """Process screenshots to extract coding problem information."""
+        logger.info(f"Processing {len(screenshot_paths)} screenshots")
+        default_response = {
+            "question": "",
+            "explanation": "Error processing screenshots",
+            "solution": "# No solution generated",
+            "dry_run": "",
+            "complexity": ""
+        }
+
+        if not self.check_api_key():
+            logger.error("Invalid or missing API key")
+            default_response["notes"] = "Please set your Groq API key."
+            if callback:
+                callback(default_response)
+                return None
+            return default_response
+
+        if not screenshot_paths:
+            logger.error("No screenshots provided")
+            default_response["notes"] = "Please provide at least one screenshot."
+            if callback:
+                callback(default_response)
+                return None
+            return default_response
+
+        if callback:
+            threading.Thread(target=self._process_thread, args=(screenshot_paths, callback), daemon=True).start()
+            return None
+
+        try:
+            image_inputs = self._prepare_images(screenshot_paths)
+            if not image_inputs:
+                default_response["notes"] = "No valid images found."
+                return default_response
+            return self._process_with_api(image_inputs)
+        except Exception as e:
+            logger.error(f"Error in synchronous processing: {e}")
+            default_response["notes"] = f"Processing error: {str(e)}"
+            return default_response
+
+    def _prepare_images(self, screenshot_paths: List[str]) -> List[str]:
+        """Prepare images by encoding them in base64 format."""
+        logger.info(f"Preparing {len(screenshot_paths)} images")
+        image_inputs = []
+        for path in screenshot_paths:
+            if not os.path.exists(path):
+                logger.warning(f"Image file not found: {path}")
+                continue
+            encoded = self.encode_image(path)
+            if encoded:
+                image_inputs.append(encoded)
+        logger.info(f"Prepared {len(image_inputs)} images")
+        return image_inputs
+
+    def _process_with_api(self, images: List[str]) -> Dict[str, Any]:
+        """Process images with the Groq API."""
+        logger.info(f"Processing {len(images)} images with API")
+        default_response = {
+            "question": "",
+            "explanation": "Could not process screenshots",
+            "solution": "# No solution generated",
+            "dry_run": "",
+            "complexity": ""
+        }
+
+        if not images:
+            logger.error("No valid images to process")
+            return default_response
+
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                messages = [
+                    {"role": "system", "content": self.SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": self.USER_PROMPT},
+                            *[{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img}"}} for img in images]
+                        ]
+                    }
+                ]
+                start_time = time.time()
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=0.3,
+                    max_tokens=self.MAX_TOKENS,
+                    response_format={"type": "json_object"}
+                )
+                logger.info(f"API response received in {time.time() - start_time:.2f} seconds")
+
+                try:
+                    parsed = json.loads(response.choices[0].message.content)
+                    required_keys = ["question", "explanation", "solution", "dry_run", "complexity"]
+                    for key in required_keys:
+                        parsed.setdefault(key, default_response[key])
+                    logger.debug(f"Parsed response: {json.dumps(parsed, indent=2)}")
+                    return parsed
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON parsing failed: {e}")
+                    if attempt == self.MAX_RETRIES - 1:
+                        return default_response
+                    time.sleep(1)
+            except APIError as e:
+                logger.error(f"API error (attempt {attempt + 1}): {e}")
+                if attempt == self.MAX_RETRIES - 1:
+                    return default_response
+                time.sleep(1)
+        return default_response
+
+    def _process_thread(self, screenshot_paths: List[str], callback: Callable) -> None:
+        """Process screenshots in a separate thread."""
+        logger.info(f"Starting processing thread for {len(screenshot_paths)} screenshots")
+        try:
+            image_inputs = self._prepare_images(screenshot_paths)
+            result = self._process_with_api(image_inputs) if image_inputs else {
+                "question": "",
+                "explanation": "No valid images found",
+                "solution": "# No solution available",
+                "dry_run": "",
+                "complexity": "",
+                "notes": "No valid images found."
+            }
+            logger.debug(f"Thread result: {result}")
+        except Exception as e:
+            logger.error(f"Thread processing error: {e}")
+            result = {
+                "question": "",
+                "explanation": f"Error: {str(e)}",
+                "solution": "# Error during processing",
+                "dry_run": "",
+                "complexity": "",
+                "notes": f"Processing error: {str(e)}"
+            }
+        if callback:
+            callback(result)
+        logger.info("Thread processing complete")
+
+# Create singleton instance
+ScreenshotProcessor = ScreenshotProcessor()
